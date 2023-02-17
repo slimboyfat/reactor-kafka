@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2021 VMware Inc. or its affiliates, All Rights Reserved.
+ * Copyright (c) 2016-2023 VMware Inc. or its affiliates, All Rights Reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -43,7 +43,6 @@ import java.lang.reflect.Proxy;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
@@ -79,13 +78,10 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureH
      * producer properties are supported. The underlying Kafka producer is created lazily when required.
      */
     public DefaultKafkaSender(ProducerFactory producerFactory, SenderOptions<K, V> options) {
-        this.scheduler = Schedulers.newSingle(new ThreadFactory() {
-            @Override
-            public Thread newThread(Runnable r) {
-                Thread thread = new Thread(r);
-                thread.setName("reactor-kafka-sender-" + System.identityHashCode(this));
-                return thread;
-            }
+        this.scheduler = Schedulers.newSingle(r -> {
+            Thread thread = new Thread(r);
+            thread.setName(options.clientId());
+            return thread;
         });
         this.hasProducer = new AtomicBoolean();
         this.senderOptions = options.scheduler(options.isTransactional()
@@ -137,7 +133,8 @@ public class DefaultKafkaSender<K, V> implements KafkaSender<K, V>, EmitFailureH
                     });
             })
             .doOnError(e -> log.trace("Send failed with exception", e))
-            .publishOn(senderOptions.scheduler(), senderOptions.maxInFlight());
+            .publishOn(senderOptions.scheduler(), senderOptions.maxInFlight())
+            .contextCapture();
     }
 
     @Override
